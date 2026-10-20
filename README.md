@@ -1,111 +1,96 @@
-> **Freenove ESP32-S3 FNK0104B:** See the [board setup, verified factory pinout, and build instructions](docs/freenove-fnk0104b.md). The SPI pins of the original CYD below do not match this board.
+# Freenove FNK0104B (ESP32-S3, 2.8-inch ILI9341)
 
-## CYD_Internetradio with the ESP32-2432S028R (Cheap Yellow Display)
-Because the CYD (Cheap Yellow Display) already has a display, it makes 
-sense to realize a graphical user interface with touch input for the 
-[Simplest Internet Radio](https://github.com/Carlo47/CYD_Simplest_InternetRadio) 
-presented a earlier.
+The `freenove-fnk0104b` PlatformIO environment targets the **factory-wired**
+FNK0104B with 16 MB flash, 8 MB OPI PSRAM, an ILI9341 display and a
+FT6236/FT6336-compatible capacitive touch controller. The original
+`esp32-2432S028R` environment remains available.
 
-### Graphical User Interface
-The user interface should offer the following options:
-- Display time and date
-- Display metadata such as composer and music title
-- Display station number and name
-- Volume adjustment via slider
-- Navigation through the predefined station list
-- Saving and recalling the preferred station and volume
-- Saving a screenshot to SD card by touching the station number
+## Verify the wiring before flashing
 
-![img1](images/CYD_RadioGui.png)<br />Graphical User Interface
+Freenove's FNK0104AB TFT configuration and touch/audio examples specify:
 
+| Function | GPIO |
+| --- | --- |
+| LCD MOSI / MISO / SCLK / CS | 11 / 13 / 12 / 10 |
+| LCD D/C / backlight | 46 / 45 |
+| LCD reset | Board reset (no separate GPIO) |
+| Touch and codec I2C SDA / SCL | 16 / 15 |
+| Touch reset / interrupt | 18 / 17 |
+| Touch I2C address | `0x38` |
+| ES8311 I2C address | `0x18` |
+| Audio MCLK / BCLK / WS / data out | 4 / 5 / 7 / 8 |
+| Amplifier enable | 1 (active low) |
+| SDMMC CLK / CMD / D0 (1-bit mode) | 38 / 40 / 39 |
 
-To be able to display umlauts in German metadata, a character set is 
-required that also contains the characters from 128 to 255. Such a 
-font can easily be created from any ttf font with the program 
-[fontconvert](https://github.com/KrisKasprzak/FontConvert/blob/main/FontConvert.zip) 
-and ttf fonts are found under Windows in the font directory. 
-But any existing copyright must be respected!
+**MOSI=13, MISO=12, SCLK=14, CS=15 is not the factory FNK0104B pinout.**
+In particular, LCD CS=15 would conflict with the factory touch/codec I2C clock.
+Do not select those SPI pins on an unmodified FNK0104B. For a physically rewired
+board, confirm LCD D/C, reset, backlight, touch I2C/reset/interrupt and audio wiring
+before changing the `FN_*` settings in `include/FreenovePins.h` (or overriding
+supported settings with build flags). A compile-time check rejects pin conflicts.
+Changing a GPIO in software does not move an onboard connection.
 
-```                                        
-                                        size first last  destination
-fontconvert c:\windows\fonts\calibri.ttf 8    32    255 > calibri.h
+References:
+
+- [Freenove ESP32-S3 Display repository](https://github.com/Freenove/Freenove_ESP32_S3_Display)
+- [FNK0104AB display configuration archive](https://github.com/Freenove/Freenove_ESP32_S3_Display/blob/main/Libraries/FNK0104AB/TFT_eSPI_Setups_v1.3.zip)
+- [Touch example](https://github.com/Freenove/Freenove_ESP32_S3_Display/tree/main/Tutorial_With_Touch/Sketches/Sketch_11.1_Touch)
+- [Audio example](https://github.com/Freenove/Freenove_ESP32_S3_Display/tree/main/Tutorial_With_Touch/Sketches/Sketch_07.1_Music)
+- [Schematic](https://github.com/Freenove/Freenove_ESP32_S3_Display/blob/main/Schematic/2.8inch_ESP32-S3_Display_Schematic.pdf)
+
+## Build and upload
+
+Use [pioarduino Core](https://github.com/pioarduino/platform-espressif32) 6.1.19
+(the PlatformIO-compatible core), or the pioarduino IDE extension. The project pins the pioarduino
+ESP32 platform with Arduino 3.3.7 and AudioTools 1.2.2.
+
+```sh
+pio run -e freenove-fnk0104b
+pio run -e freenove-fnk0104b -t upload
+pio device monitor -b 115200
 ```
 
-After a short time, the designed user interface worked as desired. 
-But as soon as I activated the code for the radio, the touch input 
-was blocked. The reason was quickly found: The AnalogAudioStream 
-outputs the analog signals of the built-in DAC to the GPIO_NUM 25 
-and GPIO_NUM_26 pins. Unfortunately the CYD uses GPIO_NUM_25 for 
-the clock signal of the touch pad.
+Select the appropriate USB/serial device if multiple boards are connected. USB
+CDC is enabled. No external I2S DAC is needed for the Freenove onboard speaker
+output: the firmware initializes its ES8311 and active-low amplifier.
 
-### External DAC
-Therefore an external DAC must be used, e.g. PCM5102, VS1053B or the 
-UDA1334A which I used for my stereo headphones. 
+The UI is landscape (320x240). LovyanGFX handles the capacitive touch rotation;
+the old resistive-touch mirroring/calibration is used only by the original CYD.
+Touch and audio share I2C, which stays active when switching stations. SD uses a
+separate SDMMC interface. Missing SD media does not prevent radio startup;
+screenshots are saved under `/Screenshots` when a card is available.
 
-![img2](images/UA1334A.png) UDA1334A
+Wi-Fi can be provisioned through the existing `AutoConnectAP` flow. Keep personal
+credentials out of commits.
 
-I wired the CYD and the UA1334 as shown in the table:
+## Prepared cloud workspace
 
-| Con P3 | UA1334A |    ¦    | Con CN1   | UA1334A |
-|:------:|:-------:|:-------:|:---------:|:-------:|
-| IO 22  | DIN     |    ¦    | GND       | GND     |
-| IO 21  | WSEL    |    ¦    | IO 27     | BCLK    |
-|        |         |    ¦    | 3.3V      | VIN     | 
+The cloud setup stores its tools and libraries under `/workspace` and supplies a
+local configuration to avoid the restricted PlatformIO registry:
 
-### External Amplifier
-If you want to connect 2 stereo speakers instead, you can use 
-2 MAX98357 PCM Class D amplifiers. The stereo amplifiers must 
-be wired with different resistor values to get the left and right 
-stereo channel, see the description in the repository 
-[ESP32Internetradio](https://github.com/Carlo47/ESP32InternetRadio).
-
-![img3](images/MAX98357A.png) MAX98357A
-
-I wired the CYD and the MAX98357 as shown in the table:
-
-| MAX98357 |  ¦  | Con CN1 |  ¦  | Con P3 |  ¦  | Con P5 |
-|:--------:|:---:|:-------:|:---:|:------:|:---:|:------:|
-|   LRC    |  ¦  |         |  ¦  | IO 21  |  ¦  |        |
-|   BCLK   |  ¦  |  IO 27  |  ¦  |        |  ¦  |        |
-|   DIN    |  ¦  |         |  ¦  | IO 22  |  ¦  |        |
-|   GND    |  ¦  |         |  ¦  |        |  ¦  | GND    |
-|   Vin    |  ¦  |         |  ¦  |        |  ¦  | VIN    |
-
+```sh
+export PLATFORMIO_CORE_DIR=/workspace/.platformio
+export PATH=/workspace/.platformio/tools/toolchain-xtensa-esp-elf/bin:/workspace/.venvs/iradio/bin:$PATH
+cd /workspace/iradio
+pio run -c /workspace/.setup/iradio/cloud.ini -e freenove-fnk0104b
 ```
-                      .-----------------. 
-           21 -->     o LRC             |  
-           27 -->     o BCLK       MAX  |
-           22 -->     o DIN       98357 |
-                      o Gain            |   Spkr right
-  5V Vin ---[560K]----o SD              |    _/|
-          GND -->     o GND             o---|  |
-          5V  -->     o Vin (5V)        o---|_ |
-                      `-----------------´     \|   
-                      .-----------------. 
-           21 -->     o LRC             |  
-           27 -->     o BCLK       MAX  |
-           22 -->     o DIN       98357 |
-                      o Gain            |   Spkr left
-  5V Vin ---[180K]----o SD              |    _/|
-          GND -->     o GND             o---|  |
-          5V  -->     o Vin (5V)        o---|_ |
-                      `-----------------´     \|
- ```
 
-### Connecting to the WLAN
-When the web radio is put into operation for the first time, we
-try to connect to the WiFi with the hard coded SSID and password,
-or - if this fails - the AutoConnectAP access point is started. 
-Log in here with your cell phone and then enter the SSID and 
-password of your router via the web browser at the URL 192.168.4.1. 
-The login data is then saved permanently so that the web radio 
-connects automatically in future.
+`bash /workspace/.setup/iradio/install.sh` refreshes dependencies and builds this
+target. It keeps generated IDE data outside the checkout. On another machine,
+use the normal project commands above and allow access to the required package
+registries and GitHub releases.
 
-### Software 
-I use the **LovyanGFX** library for programming graphical elements. I 
-programmed some components for the user interface myself and compiled 
-them in the UiComponents library. For the audio functions, I used 
-Phil Schatzmann's **AudioTools**. 
+## Validation
 
-Make sure you have an Arduino framework version greater than 3.x.y and 
-an audiotools version 1.2.x  
+Host pin configuration tests (requires Python 3 and g++):
+
+```sh
+python3 -m unittest discover -s test -p 'test_*.py' -v
+```
+
+A successful firmware build checks compilation and linking only. On the actual
+board, verify display orientation and colors, touch at all corners and the volume
+slider, Wi-Fi provisioning, audible playback and station switching, preference
+recall after reboot, and screenshot creation with and without SD media. The
+capacitive touch panel should remain responsive after a screenshot and a station
+change. These behaviors cannot be confirmed without connected hardware.
