@@ -2,30 +2,33 @@
 
 namespace SDCard
 {
-  /**
-   * Initialize the SD card (Trans Flash) using VSPI (SPI3_HOST) or HSPI_HOST (SPI2_HOST)
-   * The pins SCK = 18, MISO = 19, MOSI = 23 and CS = 5 are wired onboard
-   * Define
-   * SPIClass sdcardSPI(HSPI);
-   * or
-   * SPIClass sdcardSPI(VSPI);
-   * in main.cpp
-   * and pass sdcardSPI as argument to initSDcard()
-   */
-  void initSDCard(SPIClass& spi)
-  {
-    // Use custom SPI class
-    spi.begin(TF_SCLK, TF_MISO, TF_MOSI, TF_CS);
-    if (!SD.begin(TF_CS, spi)) // 👉 Use default frequency of 4MHz
-      log_e("==> SD.begin failed!");
-    else
-      log_e("==> done");
+#if !defined(IRADIO_FREENOVE_S3)
+  static SPIClass sdcardSPI(VSPI);
+#endif
 
-    // Use default VSPI with pins 5, 18, 19, 23 (CS, SCLK, MISO, MOSI)
-    /*     if (!SD.begin()) // 👉 Use default frequency of 4MHz
-            log_e("==> SD.begin failed!");
-        else
-            log_e("==> done"); */
+  bool initSDCard()
+  {
+#if defined(IRADIO_FREENOVE_S3)
+    // Factory FNK0104B slot: use 1-bit SDMMC (CLK, CMD, D0).
+    if (!SD_MMC.setPins(38, 40, 39) || !SD_MMC.begin("/sdcard", true))
+#else
+    sdcardSPI.begin(TF_SCLK, TF_MISO, TF_MOSI, TF_CS);
+    if (!SD.begin(TF_CS, sdcardSPI))
+#endif
+    {
+      log_w("SD card unavailable; screenshots are disabled");
+      endSDCard();
+      return false;
+    }
+    return true;
+  }
+
+  void endSDCard()
+  {
+    card().end();
+#if !defined(IRADIO_FREENOVE_S3)
+    sdcardSPI.end();
+#endif
   }
 
   /**
@@ -34,12 +37,12 @@ namespace SDCard
   void printSDCardInfo()
   {
     const char*   knownCardTypes[] = {"NONE", "MMC", "SDSC", "SDHC", "UNKNOWN"};
-    sdcard_type_t cardType         = SD.cardType();
+    sdcard_type_t cardType         = card().cardType();
     // uint64_t numSectors= SD.numSectors();
     // uint64_t sectorSize= SD.sectorSize();
-    uint64_t cardSize              = SD.cardSize() >> 20; // divide by 2^20 = 1'048'576 to get size in MB
-    uint64_t cardTotal             = SD.totalBytes() >> 20;
-    uint64_t cardUsed              = SD.usedBytes() >> 20;
+    uint64_t cardSize              = card().cardSize() >> 20; // divide by 2^20 = 1'048'576 to get size in MB
+    uint64_t cardTotal             = card().totalBytes() >> 20;
+    uint64_t cardUsed              = card().usedBytes() >> 20;
     uint64_t cardFree              = cardTotal - cardUsed;
     Serial.printf(R"(
 SDCard Info

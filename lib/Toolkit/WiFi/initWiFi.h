@@ -1,7 +1,7 @@
 #pragma once
 #include "ESP32AutoConnect.h"
 #include <Arduino.h>
-#include <WIFI.h>
+#include <WiFi.h>
 
 namespace InitWiFi
 {

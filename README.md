@@ -1,3 +1,5 @@
+> **Freenove ESP32-S3 FNK0104B:** See the [board setup, verified factory pinout, and build instructions](docs/freenove-fnk0104b.md). The SPI pins of the original CYD below do not match this board.
+
 ## CYD_Internetradio with the ESP32-2432S028R (Cheap Yellow Display)
 Because the CYD (Cheap Yellow Display) already has a display, it makes 
 sense to realize a graphical user interface with touch input for the 

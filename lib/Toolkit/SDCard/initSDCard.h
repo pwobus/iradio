@@ -1,10 +1,11 @@
 #pragma once
 #include <Arduino.h>
-#include <SD.h>
+#include "RadioStorage.h"
 
 namespace SDCard
 {
-  void initSDCard(SPIClass& spi);
+  bool initSDCard();
+  void endSDCard();
   void printSDCardInfo();
   void listFiles(File dir, int indent = 0);
 } // namespace SDCard

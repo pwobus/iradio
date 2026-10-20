@@ -89,7 +89,16 @@
  *              https://github.com/KrisKasprzak/FontConvert/blob/main/FontConvert.zip
  *              http://oleddisplay.squix.ch/
  */
+// Parse LovyanGFX before AudioDriver exposes its GPIO type.
+#include "Display.h"
+#include <WiFiClientSecure.h>
 #include <AudioTools.h>
+#if defined(IRADIO_FREENOVE_S3)
+#include <AudioBoard.h>
+#include "FreenoveAudio.h"
+#endif
+// Explicit backend headers allow PlatformIO to discover optional AudioTools dependencies.
+#include <MP3DecoderHelix.h>
 #include <AudioTools/AudioCodecs/CodecMP3Helix.h>
 #include "AudioTools/Disk/AudioSourceURL.h"
 #include "AudioTools/Communication/AudioHttp.h"
@@ -121,9 +130,11 @@ const char  hostname[]        = "CYD-RADIO";
 const char  ssid[]            = "your_ssid";     // Replace with your actual WiFi ssid
 const char  password[]        = "your_password"; // Replace with your actual WiFi password
 
-const int I2S_BCKL = GPIO_NUM_27; // --> BCKL |               // 26 |
-const int I2S_WSEL = GPIO_NUM_21; // --> WSEL |UDA1334A       // 25 | when using spkr output
-const int I2S_DOUT = GPIO_NUM_22; // --> DIN  |               // 27 |
+#if !defined(IRADIO_FREENOVE_S3)
+const int I2S_BCKL = GPIO_NUM_27;
+const int I2S_WSEL = GPIO_NUM_21;
+const int I2S_DOUT = GPIO_NUM_22;
+#endif
 
 const char autoConnectPrompt[] = R"(
 
@@ -137,10 +148,17 @@ const char autoConnectPrompt[] = R"(
 
 AsyncWebServer server(80);
 
+#if defined(IRADIO_FREENOVE_S3)
+FreenoveAudioPins audioPins;
+audio_driver::AudioBoard audioBoard(audio_driver::AudioDriverES8311, audioPins);
+I2SCodecConfig config;
+FreenoveAudioStream i2s(audioBoard);
+#else
 I2SConfig config;
+I2SStream i2s;
+#endif
 ICYStream url(1024); // or use URLStream url(1024) but no meta data evailable
 
-I2SStream          i2s; // final output of decoded stream, fetched to the external DAC
 VolumeStream       volume(i2s);
 EncodedAudioStream dec(&volume, new MP3DecoderHelix()); // decode stream and route it to the volume control
 StreamCopy         copier(dec, url);                    // copies mp3-stream from url to the decoder
@@ -157,7 +175,6 @@ UiTheme dateTimeTheme(TFT_GREEN, DARKERGREY, DARKERGREY, DARKERGREY, &fonts::Fre
 
 LGFX        lcd;
 GFXfont     myFont = fonts::DejaVu18;
-SPIClass    sdcardSPI(VSPI); // uncomment this line to take screenshots
 Wait        waitDateTime;    // diplay date and time every second
 Preferences prefs;           // stores current station and volume
 
@@ -327,7 +344,11 @@ std::vector<UiPanel*> UiPanel::panels;
 
 void startPlaying(int station, float loudness)
 {
-  i2s.begin(config);
+  if (!i2s.begin(config))
+  {
+    log_e("Audio output initialization failed");
+    return;
+  }
   dec.begin();
   volume.begin(config);
   volume.setVolume(loudness);
@@ -424,11 +445,16 @@ void takeScreenShot()
   strftime(buf, bufSize, "/Screenshots/Scr%Y%m%d_%H%M%S.bmp", &rtcTime);
   log_i("filename = %s", buf);
   stopPlaying();
-  SDCard::initSDCard(sdcardSPI);
-  SDCard::saveBmpToSD_24bit(lcd, buf) ? log_i("screenshot %s saved to SD card", buf) : log_i("saving screensho failed");
-  SD.end();
-  sdcardSPI.end();
+  if (SDCard::initSDCard())
+  {
+    SDCard::card().mkdir("/Screenshots");
+    SDCard::saveBmpToSD_24bit(lcd, buf) ? log_i("screenshot %s saved to SD card", buf) : log_i("saving screenshot failed");
+    SDCard::endSDCard();
+  }
+#if !defined(IRADIO_FREENOVE_S3)
+  // The original CYD touch controller shares the SD SPI peripheral.
   lcd.touch()->init();
+#endif
   startPlaying(currentStation, currentVolume);
 }
 
@@ -573,9 +599,16 @@ void initAudio()
 
   // configure i2s stream
   config          = i2s.defaultConfig(TX_MODE);
+#if defined(IRADIO_FREENOVE_S3)
+  config.sd_active = false;
+  config.sdmmc_active = false;
+  config.i2s_function = audio_driver::PinFunction::CODEC;
+  config.pin_mck = FN_I2S_MCLK;
+#else
   config.pin_bck  = I2S_BCKL;
   config.pin_ws   = I2S_WSEL;
   config.pin_data = I2S_DOUT;
+#endif
   startPlaying(currentStation, currentVolume);
   log_i("==> done");
 }
@@ -605,15 +638,19 @@ void initPanels()
 bool getMappedTouch(LGFX& lcd, int& x, int& y)
 {
   int     x0, y0;
+#if !defined(IRADIO_FREENOVE_S3)
   uint8_t rot = lcd.getRotation();
+#endif
   if (lcd.getTouch(&x0, &y0))
   {
+#if !defined(IRADIO_FREENOVE_S3)
     if (rot == 1 || rot == 3)
     {
       x = map(x0, lcd.width(), 0, 0, lcd.width());
       y = map(y0, lcd.height(), 0, 0, lcd.height());
     }
     else
+#endif
     {
       x = x0;
       y = y0;
@@ -627,8 +664,17 @@ void setup()
 {
   Serial.begin(115200);
 
+#if defined(IRADIO_FREENOVE_S3)
+  pinMode(FN_AUDIO_ENABLE, OUTPUT);
+  digitalWrite(FN_AUDIO_ENABLE, HIGH); // Mute amplifier until codec is ready.
+  Wire.begin(FN_TOUCH_SDA, FN_TOUCH_SCL, 400000);
+#endif
   lcd.init();
+#if defined(IRADIO_FREENOVE_S3)
+  lcd.setRotation(1); // ILI9341 native 240x320 -> landscape 320x240.
+#else
   lcd.setRotation((uint8_t) ROTATION::LANDSCAPE_USB_RIGHT);
+#endif
 
   bool connected = InitWiFi::initWiFi(ssid, password, hostname); // Try connecting with given WiFi credentials
   if (connected)
@@ -643,7 +689,6 @@ void setup()
     lcd.setTextDatum(textdatum_t::middle_center);
     lcd.setFont(&fonts::DejaVu18);
     lcd.printf(autoConnectPrompt, lcd.width() / 2, 20);
-    SDCard::saveBmpToSD_16bit(lcd, "/prompt_autoconnect.bmp");
     InitWiFi::initESP32AutoConnect(hostname); // Autoconnect or ask for credentials on mobile phone
     InitWiFi::printNearbyNetworks();
     InitWiFi::printConnectionDetails();
@@ -653,12 +698,15 @@ void setup()
   initPrefs();  // initialize volume and station from Preferences
   printPrefs(); // print current station and volume to serial monitor
   initPanels();
-  SDCard::initSDCard(sdcardSPI);
-  SDCard::printSDCardInfo();       // print information about the SD card
-  SDCard::listFiles(SD.open("/")); // list all files in the root directory of the SD card
-  SD.end();                        // stop SD card to free the SPI bus for the touchpad
-  sdcardSPI.end();                 // stop SPI bus for SD card to free the SPI bus for the touchpad
+  if (SDCard::initSDCard())
+  {
+    SDCard::printSDCardInfo();
+    SDCard::listFiles(SDCard::card().open("/"));
+    SDCard::endSDCard();
+  }
+#if !defined(IRADIO_FREENOVE_S3)
   lcd.touch()->init();
+#endif
   initAudio();
   InitRTC::initRTC(timeZone, NTP_SERVER_POOL);
   EspSys::printSystemInfo();

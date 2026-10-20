@@ -1,8 +1,8 @@
 #pragma once
-#include "lgfx_esp32-2432S028R.h"
+#include "Display.h"
 #include <Arduino.h>
 #include <LovyanGFX.hpp>
-#include <SD.h>
+#include "RadioStorage.h"
 
 namespace SDCard
 {

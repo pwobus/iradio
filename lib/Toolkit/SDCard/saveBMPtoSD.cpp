@@ -5,7 +5,7 @@ namespace SDCard
   bool saveBmpToSD_16bit(LGFX& lcd, const char* filename)
   {
     bool result = false;
-    File file   = SD.open(filename, "w");
+    File file   = card().open(filename, "w");
     if (file)
     {
       int width  = lcd.width();
@@ -47,7 +47,7 @@ namespace SDCard
   bool saveBmpToSD_24bit(LGFX& lcd, const char* filename)
   {
     bool result = false;
-    File file   = SD.open(filename, "w");
+    File file   = card().open(filename, "w");
     if (file)
     {
       int width  = lcd.width();

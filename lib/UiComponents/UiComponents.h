@@ -1,7 +1,7 @@
 #pragma once
 #include <Arduino.h>
 #include <LovyanGFX.hpp>
-#include "lgfx_esp32-2432S028R.h"
+#include "Display.h"
 #include <vector>
 
 #define DARKERGREY 0x3166
