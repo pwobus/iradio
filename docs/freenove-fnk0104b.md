@@ -94,3 +94,66 @@ slider, Wi-Fi provisioning, audible playback and station switching, preference
 recall after reboot, and screenshot creation with and without SD media. The
 capacitive touch panel should remain responsive after a screenshot and a station
 change. These behaviors cannot be confirmed without connected hardware.
+
+## No response from the touchscreen
+
+The host tests above validate pin assignments; they do **not** exercise a physical
+controller, I2C communication, or touch coordinates. Passing them does not prove
+the touchscreen works.
+
+The FT6236/FT6336 driver now polls over I2C instead of gating reads on GPIO 17.
+Some controller/firmware combinations do not hold INT low throughout a contact,
+so IRQ-gated reads can miss touches. Orientation has not been changed by this fix.
+For a board verified to need level-sensitive IRQ reads, set
+`-D FN_TOUCH_USE_IRQ=1` in that environment's build flags.
+
+Build and upload the standalone diagnostic from your checkout on the computer
+connected to the board:
+
+```sh
+pio run -e freenove-touch-test -t upload
+pio device monitor -e freenove-touch-test -b 115200
+```
+
+The diagnostic mutes the amplifier and runs without Wi-Fi, radio streaming or SD
+access. Touch each marked corner and the center. A green dot should follow your
+finger. Copy the startup lines and several `read=...` lines from the serial monitor.
+Raw I2C and mapped LGFX readings are separate samples, so an occasional mismatch
+at press/release is normal.
+
+- `controller 0x38 status=0` confirms an I2C acknowledgement.
+- Repeated `read=0` indicates a communication problem; verify the physical board,
+  SDA=16, SCL=15 and reset=18. An address acknowledgement alone does not verify
+  successful coordinate reads.
+- `read=1 contacts=0` on every touch means the device responds but reports no
+  contacts; report this output and the exact board marking/controller model.
+- `contacts=1` or `2` with changing raw coordinates confirms detection. Raw X/Y
+  are meaningful only while `contacts` is nonzero.
+- If raw contacts appear but `mapped=0` persists during a held touch, send the
+  output; the library's controller probe/read path needs further investigation.
+- If `mapped=1` but the dot is misplaced, report raw and mapped coordinates for
+  the marked corners. That provides evidence for a rotation/calibration change.
+
+After testing, restore the radio with
+`pio run -e freenove-fnk0104b -t upload`. If the diagnostic works but the radio
+stops responding, report whether it fails before playback, during playback, or
+after switching stations/taking a screenshot.
+
+## Audio breaks up when touched
+
+The original radio loop slept for 200 ms on every detected touch, and control
+handling added a further 100 ms delay. MP3 decoding/network copying runs in that
+same loop, so touching or holding the screen could starve the audio output.
+
+Touch sampling now runs every 20 ms without a blocking debounce delay. Buttons
+activate once per contact, the volume slider accepts movement, and holding a
+finger still does not redraw controls repeatedly. Audio copying continues between
+samples. The host tests also cover contact/drag/release behavior and timer rollover;
+they still do not measure audio quality on physical hardware.
+
+After updating, check playback while holding an empty part of the screen and
+while dragging the volume slider. Changing stations reconnects the stream and
+screenshots intentionally stop/restart playback; those actions can still interrupt
+audio. If ordinary touches still cause dropouts, report whether they occur only
+while moving the slider or also while holding an empty area, and include any
+serial errors.

@@ -52,7 +52,8 @@ public:
     tp.x_max = 239;
     tp.y_min = 0;
     tp.y_max = 319;
-    tp.pin_int = FN_TOUCH_INT;
+    // FT6x36 interrupt signaling varies by firmware. Freenove polls the device.
+    tp.pin_int = FN_TOUCH_USE_IRQ ? FN_TOUCH_INT : -1;
     tp.pin_rst = FN_TOUCH_RST;
     tp.i2c_port = 0;
     tp.i2c_addr = 0x38;

@@ -28,6 +28,10 @@
 #endif
 #define FN_TOUCH_RST 18
 #define FN_TOUCH_INT 17
+// Poll the FT6236/FT6336; do not require an asserted interrupt to read touches.
+#ifndef FN_TOUCH_USE_IRQ
+#define FN_TOUCH_USE_IRQ 0
+#endif
 #define FN_I2S_MCLK 4
 #define FN_I2S_BCLK 5
 #define FN_I2S_WS 7

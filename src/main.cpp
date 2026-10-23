@@ -91,6 +91,7 @@
  */
 // Parse LovyanGFX before AudioDriver exposes its GPIO type.
 #include "Display.h"
+#include "TouchInput.h"
 #include <WiFiClientSecure.h>
 #include <AudioTools.h>
 #if defined(IRADIO_FREENOVE_S3)
@@ -312,7 +313,7 @@ class UiPanelRadio : public UiPanel
       }
     }
 
-    void                   handleKeys(int x, int y);
+    void                   handleKeys(int x, int y, bool newContact);
     std::vector<UiButton*> getButtons()
     {
       return _btns;
@@ -496,7 +497,7 @@ void cbShowMetaData(MetaDataType info, const char* str, int len)
   }
 }
 
-void UiPanelRadio::handleKeys(int x, int y)
+void UiPanelRadio::handleKeys(int x, int y, bool newContact)
 {
   UiHslider* slider;
   double     loudness;
@@ -505,7 +506,9 @@ void UiPanelRadio::handleKeys(int x, int y)
   {
     if (_btns.at(i)->touched(x, y))
     {
-      log_i("Key pressed: %d", i);
+      // Buttons activate once per press; the volume slider also accepts drags.
+      if (i != 1 && !newContact) return;
+      if (newContact) log_i("Key pressed: %d", i);
       switch (i)
       {
         case 0: // station
@@ -544,7 +547,7 @@ void UiPanelRadio::handleKeys(int x, int y)
           recallPreferences();
           break;
       }
-      delay(100);
+      return;
     }
   }
 }
@@ -717,20 +720,21 @@ void setup()
 
 void loop()
 {
-  int x, y;
+  // Keep draining/decoding the network stream even while a finger is held down.
+  copier.copy();
 
   if (!panelDateTime->isHidden() && waitDateTime.isOver())
   {
     panelDateTime->updateDateTime();
   }
 
-  if (getMappedTouch(lcd, x, y))
+  static TouchInput touchInput;
+  if (touchInput.sampleReady(millis()))
   {
-    // Serial.printf("Key pressed at %3d, %3d\n", x, y);
-    if (!panelRadio->isHidden())
-      panelRadio->handleKeys(x, y);
-    vTaskDelay(pdMS_TO_TICKS(200));
+    int x = 0, y = 0;
+    const bool down = getMappedTouch(lcd, x, y);
+    const auto event = touchInput.update(down, x, y);
+    if (event != TouchInput::Event::none && !panelRadio->isHidden())
+      panelRadio->handleKeys(x, y, event == TouchInput::Event::press);
   }
-
-  copier.copy();
 }
